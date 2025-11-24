@@ -3,7 +3,7 @@ using RRHH.Core.Interfaces;
 
 namespace RRHH.Presentacion.Controllers
 {
-    [Route("api/[controller]")]
+    [Route("api/Departamentos[controller]")]
     [ApiController]
     public class DepartamentosController : ControllerBase
     {
@@ -17,7 +17,7 @@ namespace RRHH.Presentacion.Controllers
         /// <summary>
         /// Obtiene la lista de departamentos activos.
         /// </summary>
-        [HttpGet]
+        [HttpGet("/GET")]
         public async Task<IActionResult> GetDepartamento()
         {
             var departamentos = await _departamentoRepositorio.GetDepartamento();
@@ -26,7 +26,7 @@ namespace RRHH.Presentacion.Controllers
         /// <summary>
         /// Obtiene un departamento por su CI.
         /// </summary>
-        [HttpGet("{codigo}")]
+        [HttpGet("/GET/{codigo}")]
         public async Task<IActionResult> GetDepartamento(string codigo)
         {
             var departamento = await _departamentoRepositorio.GetDepartamento(codigo);
@@ -39,7 +39,7 @@ namespace RRHH.Presentacion.Controllers
         /// <summary>
         /// Obtiene la lista de departamentos marcados como borrados.
         /// </summary>
-        [HttpGet("borrados")]
+        [HttpGet("/GET/borrados")]
         public async Task<IActionResult> GetDepartamentosBorrados()
         {
             var departamentos = await _departamentoRepositorio.GetDepartamentoBorrados();
@@ -49,7 +49,7 @@ namespace RRHH.Presentacion.Controllers
         /// <summary>
         /// Crea un nuevo departamento.
         /// </summary>
-        [HttpPost]
+        [HttpPost("/POST")]
         public async Task<IActionResult> PostDepartamento(string codigo, string nombre)
         {
             if (string.IsNullOrWhiteSpace(codigo) || string.IsNullOrWhiteSpace(nombre))
@@ -63,7 +63,7 @@ namespace RRHH.Presentacion.Controllers
         /// <summary>
         /// Actualiza un departamento existente.
         /// </summary>
-        [HttpPut("{codigo}")]
+        [HttpPut("/PUT/{codigo}")]
         public async Task<IActionResult> PutDepartamento(string codigo, string nombreNuevo, string codigoNuevo)
         {
             if (string.IsNullOrWhiteSpace(codigo) || string.IsNullOrWhiteSpace(nombreNuevo) || string.IsNullOrWhiteSpace(codigoNuevo))
@@ -79,7 +79,7 @@ namespace RRHH.Presentacion.Controllers
         /// <summary>
         /// Marca un departamento como borrado (eliminación lógica).
         /// </summary>
-        [HttpDelete("{codigo}")]
+        [HttpDelete("/DELETE/{codigo}")]
         public async Task<IActionResult> DeleteDepartamento(string codigo)
         {
             var departamentoEliminado = await _departamentoRepositorio.DeleteDepartamento(codigo);
@@ -91,7 +91,7 @@ namespace RRHH.Presentacion.Controllers
         /// <summary>
         /// Habilita un departamento previamente borrado (reactivación lógica).
         /// </summary>
-        [HttpPut("{codigo}/habilitar")]
+        [HttpPut("/HABILITAR/{codigo}")]
         public async Task<IActionResult> HabilitarDepartamento(string codigo)
         {
             var departamento = await _departamentoRepositorio.HabilitarDepartamento(codigo);
