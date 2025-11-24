@@ -5,67 +5,34 @@ using RRHH.Infraestructura.Repositorio;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// =======================================================
-//        PARSEAR DATABASE_URL DE RAILWAY
-// =======================================================
-string? rawUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+// Obtener la cadena de conexión desde las variables de entorno
+var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
+                       ?? builder.Configuration.GetConnectionString("RRHHContext");
 
-string connectionString;
-
-if (!string.IsNullOrWhiteSpace(rawUrl))
-{
-    // Formato esperado:
-    // postgres://usuario:pass@host:port/dbname
-    var uri = new Uri(rawUrl);
-
-    string host = uri.Host;
-    int port = uri.Port;
-    string db = uri.AbsolutePath.TrimStart('/');
-
-    string user = uri.UserInfo.Split(':')[0];
-    string pass = uri.UserInfo.Split(':')[1];
-
-    connectionString =
-        $"Host={host};Port={port};Database={db};Username={user};Password={pass};SSL Mode=Require;Trust Server Certificate=true";
-}
-else
-{
-    // Fallback a local o appsettings.json
-    connectionString = builder.Configuration.GetConnectionString("RRHHContext")
-                      ?? throw new Exception("No hay cadena de conexión configurada.");
-}
-
-// =======================================================
-//                CONFIGURAR DbContext
-// =======================================================
+// Configurar DbContext con Npgsql
 builder.Services.AddDbContext<RRHH_DBContext>(options =>
-{
     options.UseNpgsql(connectionString, npgsqlOptions =>
     {
-        npgsqlOptions.EnableRetryOnFailure();
-    });
-});
+        npgsqlOptions.EnableRetryOnFailure(); // Intentar reconectar en caso de fallo
+    }));
 
-// =======================================================
-//                        CORS
-// =======================================================
+// Configuración de CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("MyApp", policy =>
+    options.AddPolicy("MyApp", policyBuilder =>
     {
-        policy.AllowAnyOrigin();
-        policy.AllowAnyHeader();
-        policy.AllowAnyMethod();
+        policyBuilder.AllowAnyOrigin();
+        policyBuilder.AllowAnyHeader();
+        policyBuilder.AllowAnyMethod();
     });
 });
 
-// =======================================================
-//         CONTROLADORES, SWAGGER, REPOSITORIOS
-// =======================================================
+// Añadir controladores, Swagger y la API de endpoints
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Registrar repositorios
 builder.Services.AddScoped<IDepartamentoRepositorio, DepartamentoRepositorio>();
 builder.Services.AddScoped<IEmailRepositorio, EmailRepositorio>();
 builder.Services.AddScoped<IHistorialRepositorio, HistorialRepositorio>();
@@ -78,37 +45,30 @@ builder.Services.AddScoped<IEmpleadoCurriculumRepositorio, EmpleadoCurriculumRep
 
 var app = builder.Build();
 
-// =======================================================
-//       APLICAR MIGRACIONES Y CREAR VISTAS
-// =======================================================
+// Aplicar migraciones al iniciar la aplicación
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<RRHH_DBContext>();
-
     try
     {
-        dbContext.Database.Migrate();
+        dbContext.Database.Migrate(); // Aplica migraciones si no existen
     }
     catch (Exception ex)
     {
         Console.WriteLine("Error aplicando migraciones: " + ex.Message);
     }
 
+    // Ejecutar creación de vistas en la base de datos
     await CrearVistas(dbContext);
 }
 
-// =======================================================
-//                   SWAGGER
-// =======================================================
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-// =======================================================
-//                   MIDDLEWARE
-// =======================================================
+// Middleware
 app.UseCors("MyApp");
 app.UseHttpsRedirection();
 app.UseAuthorization();
@@ -116,15 +76,13 @@ app.MapControllers();
 
 app.Run();
 
-
-// =======================================================
-//            FUNCIÓN PARA CREAR VISTAS
-// =======================================================
+// Función para crear las vistas en la base de datos
 async Task CrearVistas(RRHH_DBContext dbContext)
 {
     try
     {
-        var sql1 = @"CREATE OR REPLACE VIEW vw_EmpleadosActivos AS
+        var sql1 = @"
+            CREATE OR REPLACE VIEW vw_EmpleadosActivos AS
             SELECT 
                 e.""Codigo"" AS ""CodigoEmpleado"", 
                 p.""CI"", 
@@ -134,11 +92,15 @@ async Task CrearVistas(RRHH_DBContext dbContext)
                 p.""FechaNacimiento"", 
                 p.""Sexo"", 
                 e.""FechaIngreso""
-            FROM public.""Empleados"" e
-            JOIN public.""Personas"" p ON e.""PersonaId"" = p.""PersonaId""
-            WHERE e.""Estado"" = 'Activo';";
-
-        var sql2 = @"CREATE OR REPLACE VIEW vw_HistorialDepartamentos AS
+            FROM 
+                public.""Empleados"" e
+            JOIN 
+                public.""Personas"" p ON e.""PersonaId"" = p.""PersonaId""
+            WHERE 
+                e.""Estado"" = 'Activo';
+        ";
+        var sql2 = @"
+            CREATE OR REPLACE VIEW vw_HistorialDepartamentos AS
             SELECT 
                 h.""EmpleadoId"", 
                 e.""Codigo"" AS ""CodigoEmpleado"", 
@@ -149,13 +111,19 @@ async Task CrearVistas(RRHH_DBContext dbContext)
                 h.""FechaInicio"", 
                 h.""FechaFin"", 
                 h.""Estado""
-            FROM public.""HistorialDepartamentos"" h
-            JOIN public.""Empleados"" e ON h.""EmpleadoId"" = e.""EmpleadoId""
-            JOIN public.""Departamentos"" d ON h.""DepartamentoId"" = d.""DepartamentoId""
-            JOIN public.""Puestos"" p ON h.""PuestoId"" = p.""PuestoId""
-            WHERE h.""Estado"" = 'Activo';";
-
-        var sql3 = @"CREATE OR REPLACE VIEW vw_ResumenNominaEmpleado AS
+            FROM 
+                public.""HistorialDepartamentos"" h
+            JOIN 
+                public.""Empleados"" e ON h.""EmpleadoId"" = e.""EmpleadoId""
+            JOIN 
+                public.""Departamentos"" d ON h.""DepartamentoId"" = d.""DepartamentoId""
+            JOIN 
+                public.""Puestos"" p ON h.""PuestoId"" = p.""PuestoId""
+            WHERE 
+                h.""Estado"" = 'Activo';
+        ";
+        var sql3 = @"
+            CREATE OR REPLACE VIEW vw_ResumenNominaEmpleado AS
             SELECT 
                 n.""NominaId"", 
                 e.""Codigo"" AS ""CodigoEmpleado"", 
@@ -167,11 +135,15 @@ async Task CrearVistas(RRHH_DBContext dbContext)
                 n.""Descuentos"", 
                 n.""TotalNeto"", 
                 n.""Estado"" AS ""EstadoNomina""
-            FROM public.""Nominas"" n
-            JOIN public.""Empleados"" e ON n.""EmpleadoId"" = e.""EmpleadoId""
-            WHERE n.""Estado"" = 'Activo';";
-
-        var sql4 = @"CREATE OR REPLACE VIEW vw_ReportesEmpleados AS
+            FROM 
+                public.""Nominas"" n
+            JOIN 
+                public.""Empleados"" e ON n.""EmpleadoId"" = e.""EmpleadoId""
+            WHERE 
+                n.""Estado"" = 'Activo';
+        ";
+        var sql4 = @"
+            CREATE OR REPLACE VIEW vw_ReportesEmpleados AS
             SELECT 
                 r.""ReporteId"", 
                 e.""Codigo"" AS ""CodigoEmpleadoReportado"", 
@@ -180,12 +152,17 @@ async Task CrearVistas(RRHH_DBContext dbContext)
                 r.""Tipo"", 
                 r.""Descripcion"", 
                 r.""Estado"" AS ""EstadoReporte""
-            FROM public.""ReportesEmpleados"" r
-            JOIN public.""Empleados"" e ON r.""EmpleadoReportadoId"" = e.""EmpleadoId""
-            JOIN public.""Departamentos"" d ON r.""DepartamentoEmisorId"" = d.""DepartamentoId""
-            WHERE r.""Estado"" = 'Activo';";
-
-        var sql5 = @"CREATE OR REPLACE VIEW vw_EmpleadosSalariosPuestos AS
+            FROM 
+                public.""ReportesEmpleados"" r
+            JOIN 
+                public.""Empleados"" e ON r.""EmpleadoReportadoId"" = e.""EmpleadoId""
+            JOIN 
+                public.""Departamentos"" d ON r.""DepartamentoEmisorId"" = d.""DepartamentoId""
+            WHERE 
+                r.""Estado"" = 'Activo';
+        ";
+        var sql5 = @"
+            CREATE OR REPLACE VIEW vw_EmpleadosSalariosPuestos AS
             SELECT 
                 e.""EmpleadoId"", 
                 e.""Codigo"" AS ""CodigoEmpleado"", 
@@ -196,14 +173,21 @@ async Task CrearVistas(RRHH_DBContext dbContext)
                 pue.""Nombre"" AS ""NombrePuesto"", 
                 e.""FechaIngreso"", 
                 e.""Estado"" AS ""EstadoEmpleado""
-            FROM public.""Empleados"" e
-            JOIN public.""Personas"" p ON e.""PersonaId"" = p.""PersonaId""
-            JOIN public.""Nominas"" s ON e.""EmpleadoId"" = s.""EmpleadoId""
-            JOIN public.""HistorialDepartamentos"" h ON e.""EmpleadoId"" = h.""EmpleadoId""
-            JOIN public.""Puestos"" pue ON h.""PuestoId"" = pue.""PuestoId""
-            WHERE e.""Estado"" = 'Activo' 
-              AND s.""Estado"" = 'Activo' 
-              AND pue.""Estado"" = 'Activo';";
+            FROM 
+                public.""Empleados"" e
+            JOIN 
+                public.""Personas"" p ON e.""PersonaId"" = p.""PersonaId""
+            JOIN 
+                public.""Nominas"" s ON e.""EmpleadoId"" = s.""EmpleadoId""
+            JOIN 
+                public.""HistorialDepartamentos"" h ON e.""EmpleadoId"" = h.""EmpleadoId""
+            JOIN 
+                public.""Puestos"" pue ON h.""PuestoId"" = pue.""PuestoId""
+            WHERE 
+                e.""Estado"" = 'Activo' 
+                AND s.""Estado"" = 'Activo' 
+                AND pue.""Estado"" = 'Activo';
+        ";
 
         await dbContext.Database.ExecuteSqlRawAsync(sql1);
         await dbContext.Database.ExecuteSqlRawAsync(sql2);
