@@ -1,187 +1,105 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.AspNetCore.Mvc;
 using RRHH.Core.Interfaces;
-using RRHH.Infraestructura.Data;
-using RRHH.Infraestructura.Repositorio;
 
-var builder = WebApplication.CreateBuilder(args);
-
-// Obtener la cadena de conexión desde las variables de entorno
-var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
-                       ?? builder.Configuration.GetConnectionString("RRHHContext");
-
-// Configurar DbContext con Npgsql
-builder.Services.AddDbContext<RRHH_DBContext>(options =>
-    options.UseNpgsql(connectionString, npgsqlOptions =>
-    {
-        npgsqlOptions.EnableRetryOnFailure(); // Intentar reconectar en caso de fallo
-    })
-);
-
-// Configuración de CORS
-builder.Services.AddCors(options =>
+namespace RRHH.Presentacion.Controllers
 {
-    options.AddPolicy("MyApp", policyBuilder =>
+    [Route("api/[controller]")]
+    [ApiController]
+    public class EmpleadosController : ControllerBase
     {
-        policyBuilder.AllowAnyOrigin();
-        policyBuilder.AllowAnyHeader();
-        policyBuilder.AllowAnyMethod();
-    });
-});
+        private readonly IEmpleadoRepositorio _EmpleadoRepositorio;
 
-// Añadir controladores, Swagger y la API de endpoints
-builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+        public EmpleadosController(IEmpleadoRepositorio EmpleadoRepositorio)
+        {
+            _EmpleadoRepositorio = EmpleadoRepositorio;
+        }
 
-// Registrar repositorios
-builder.Services.AddScoped<IDepartamentoRepositorio, DepartamentoRepositorio>();
-builder.Services.AddScoped<IEmailRepositorio, EmailRepositorio>();
-builder.Services.AddScoped<IHistorialRepositorio, HistorialRepositorio>();
-builder.Services.AddScoped<IPersonaRepositorio, PersonaRepositorio>();
-builder.Services.AddScoped<IPuestoRepositorio, PuestoRepositorio>();
-builder.Services.AddScoped<IEmpleadoRepositorio, EmpleadoRepositorio>();
-builder.Services.AddScoped<INominaRepositorio, NominaRepositorio>();
-builder.Services.AddScoped<IReporteEmpleadoRepositorio, ReporteEmpleadoRepositorio>();
-builder.Services.AddScoped<IEmpleadoCurriculumRepositorio, EmpleadoCurriculumRepositorio>();
+        /// <summary>
+        /// Obtiene la lista de empleados activos.
+        /// </summary>
+        [HttpGet]
+        public async Task<IActionResult> GetEmpleado()
+        {
+            var empleados = await _EmpleadoRepositorio.GetEmpleado();
+            return Ok(empleados);
+        }
+        /// <summary>
+        /// Obtiene un Empleado por su CI.
+        /// </summary>
+        [HttpGet("{codigo}")]
+        public async Task<IActionResult> GetEmpleado(string codigo)
+        {
+            var Empleado = await _EmpleadoRepositorio.GetEmpleado(codigo);
+            if (Empleado is null)
+                return NotFound($"No se encontró un Empleado con codigo {codigo}.");
 
-var app = builder.Build();
+            return Ok(Empleado);
+        }
 
-// Aplicar migraciones al iniciar la aplicación
-using (var scope = app.Services.CreateScope())
-{
-    var dbContext = scope.ServiceProvider.GetRequiredService<RRHH_DBContext>();
+        /// <summary>
+        /// Obtiene la lista de empleados marcados como borrados.
+        /// </summary>
+        [HttpGet("borrados")]
+        public async Task<IActionResult> GetEmpleadosBorrados()
+        {
+            var empleados = await _EmpleadoRepositorio.GetEmpleadoBorrados();
+            return Ok(empleados);
+        }
 
-    try
-    {
-        dbContext.Database.Migrate(); // Aplica migraciones si no existen
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine("Error aplicando migraciones: " + ex.Message);
-    }
+        /// <summary>
+        /// Crea un nuevo Empleado.
+        /// </summary>
+        [HttpPost]
+        public async Task<IActionResult> PostEmpleado(string ci, string codigo, DateTime fechaingreso)
+        {
+            if (string.IsNullOrWhiteSpace(ci) || string.IsNullOrWhiteSpace(codigo))
+                return BadRequest("Los campos CI y código son obligatorios.");
+            //var EmpleadoCreado = await _EmpleadoRepositorio.PostEmpleado(ci, codigo, fechaingreso);
 
-    // Ejecutar creación de vistas en la base de datos
-    await CrearVistas(dbContext);
-}
+            //return CreatedAtAction(nameof(GetEmpleado), new { codigo = EmpleadoCreado.Codigo }, EmpleadoCreado);
+            return Ok(await _EmpleadoRepositorio.PostEmpleado(ci, codigo, fechaingreso));        
+        }
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+        /// <summary>
+        /// Actualiza un Empleado existente.
+        /// </summary>
+        [HttpPut("{codigo}")]
+        public async Task<IActionResult> PutEmpleado(string codigo, string codigoNuevo, string ci)
+        {
+            if (string.IsNullOrWhiteSpace(codigo) || string.IsNullOrWhiteSpace(codigoNuevo))
+                return BadRequest("Debe llenar todos los campos del Empleado.");
 
-// Middleware
-app.UseCors("MyApp");
-app.UseHttpsRedirection();
-app.UseAuthorization();
-app.MapControllers();
+            var Empleado = await _EmpleadoRepositorio.PutEmpleado(codigo, codigoNuevo, ci);
+            if (Empleado is null)
+                return NotFound($"No se encontró el Empleado con código {codigo}.");
 
-app.Run();
+            return Ok(Empleado);
+        }
 
-// Función para crear las vistas en la base de datos
-async Task CrearVistas(RRHH_DBContext dbContext)
-{
-    try
-    {
-        var sql1 = @"
-            CREATE OR REPLACE VIEW vw_EmpleadosActivos AS
-            SELECT 
-                e.""Codigo"" AS ""CodigoEmpleado"", 
-                p.""CI"", 
-                p.""Nombre"", 
-                p.""ApellidoPaterno"", 
-                p.""ApellidoMaterno"", 
-                p.""FechaNacimiento"", 
-                p.""Sexo"", 
-                e.""FechaIngreso""
-            FROM public.""Empleados"" e
-            JOIN public.""Personas"" p ON e.""PersonaId"" = p.""PersonaId""
-            WHERE e.""Estado"" = 'Activo';
-        ";
+        /// <summary>
+        /// Marca un Empleado como borrado (eliminación lógica).
+        /// </summary>
+        [HttpDelete("{codigo}")]
+        public async Task<IActionResult> DeleteEmpleado(string codigo, string ci)
+        {
+            var EmpleadoEliminado = await _EmpleadoRepositorio.DeleteEmpleado(codigo, ci);
+            if (EmpleadoEliminado is null)
+                return NotFound($"No se encontró un Empleado con CI {codigo}.");
 
-        var sql2 = @"
-            CREATE OR REPLACE VIEW vw_HistorialDepartamentos AS
-            SELECT 
-                h.""EmpleadoId"", 
-                e.""Codigo"" AS ""CodigoEmpleado"", 
-                d.""Codigo"" AS ""CodigoDepartamento"", 
-                d.""Nombre"" AS ""NombreDepartamento"", 
-                p.""Codigo"" AS ""CodigoPuesto"", 
-                p.""Nombre"" AS ""NombrePuesto"", 
-                h.""FechaInicio"", 
-                h.""FechaFin"", 
-                h.""Estado""
-            FROM public.""HistorialDepartamentos"" h
-            JOIN public.""Empleados"" e ON h.""EmpleadoId"" = e.""EmpleadoId""
-            JOIN public.""Departamentos"" d ON h.""DepartamentoId"" = d.""DepartamentoId""
-            JOIN public.""Puestos"" p ON h.""PuestoId"" = p.""PuestoId""
-            WHERE h.""Estado"" = 'Activo';
-        ";
+            return Ok(EmpleadoEliminado);
+        }
+        /// <summary>
+        /// Habilita un Empleado previamente borrado (reactivación lógica).
+        /// </summary>
+        [HttpPut("{codigo}/habilitar")]
+        public async Task<IActionResult> HabilitarEmpleado(string codigo, string ci)
+        {
+            var Empleado = await _EmpleadoRepositorio.HabilitarEmpleado(codigo, ci);
 
-        var sql3 = @"
-            CREATE OR REPLACE VIEW vw_ResumenNominaEmpleado AS
-            SELECT 
-                n.""NominaId"", 
-                e.""Codigo"" AS ""CodigoEmpleado"", 
-                e.""FechaIngreso"", 
-                n.""PeriodoInicio"", 
-                n.""PeriodoFin"", 
-                n.""SalarioBase"", 
-                n.""Bonos"", 
-                n.""Descuentos"", 
-                n.""TotalNeto"", 
-                n.""Estado"" AS ""EstadoNomina""
-            FROM public.""Nominas"" n
-            JOIN public.""Empleados"" e ON n.""EmpleadoId"" = e.""EmpleadoId""
-            WHERE n.""Estado"" = 'Activo';
-        ";
+            if (Empleado is null)
+                return NotFound($"No se encontró un Empleado con codigo {codigo}.");
 
-        var sql4 = @"
-            CREATE OR REPLACE VIEW vw_ReportesEmpleados AS
-            SELECT 
-                r.""ReporteId"", 
-                e.""Codigo"" AS ""CodigoEmpleadoReportado"", 
-                d.""Codigo"" AS ""CodigoDepartamentoEmisor"", 
-                r.""Fecha"", 
-                r.""Tipo"", 
-                r.""Descripcion"", 
-                r.""Estado"" AS ""EstadoReporte""
-            FROM public.""ReportesEmpleados"" r
-            JOIN public.""Empleados"" e ON r.""EmpleadoReportadoId"" = e.""EmpleadoId""
-            JOIN public.""Departamentos"" d ON r.""DepartamentoEmisorId"" = d.""DepartamentoId""
-            WHERE r.""Estado"" = 'Activo';
-        ";
-
-        var sql5 = @"
-            CREATE OR REPLACE VIEW vw_EmpleadosSalariosPuestos AS
-            SELECT 
-                e.""EmpleadoId"", 
-                e.""Codigo"" AS ""CodigoEmpleado"", 
-                p.""Nombre"" AS ""NombreEmpleado"", 
-                p.""ApellidoPaterno"", 
-                p.""ApellidoMaterno"", 
-                s.""SalarioBase"", 
-                pue.""Nombre"" AS ""NombrePuesto"", 
-                e.""FechaIngreso"", 
-                e.""Estado"" AS ""EstadoEmpleado""
-            FROM public.""Empleados"" e
-            JOIN public.""Personas"" p ON e.""PersonaId"" = p.""PersonaId""
-            JOIN public.""Nominas"" s ON e.""EmpleadoId"" = s.""EmpleadoId""
-            JOIN public.""HistorialDepartamentos"" h ON e.""EmpleadoId"" = h.""EmpleadoId""
-            JOIN public.""Puestos"" pue ON h.""PuestoId"" = pue.""PuestoId""
-            WHERE e.""Estado"" = 'Activo'
-              AND s.""Estado"" = 'Activo'
-              AND pue.""Estado"" = 'Activo';
-        ";
-
-        await dbContext.Database.ExecuteSqlRawAsync(sql1);
-        await dbContext.Database.ExecuteSqlRawAsync(sql2);
-        await dbContext.Database.ExecuteSqlRawAsync(sql3);
-        await dbContext.Database.ExecuteSqlRawAsync(sql4);
-        await dbContext.Database.ExecuteSqlRawAsync(sql5);
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Error creando las vistas: {ex.Message}");
+            return Ok(Empleado);
+        }
     }
 }
